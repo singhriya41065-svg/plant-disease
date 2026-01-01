@@ -2,9 +2,7 @@ import os
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 os.environ["YOLO_VERBOSE"] = "False"
 
-
 import streamlit as st
-import cv2
 import numpy as np
 import tensorflow as tf
 from ultralytics import YOLO
@@ -13,24 +11,23 @@ import tempfile
 
 # ================= LOAD MODELS =================
 cnn_model = tf.keras.models.load_model("best_model.h5")
-yolo = YOLO("yolov8n.pt")   # COCO model
+yolo = YOLO("yolov8n.pt")
 
 with open("class_names.txt") as f:
     class_names = [line.strip() for line in f.readlines()]
 
 # ================= LEAF COLOR DETECTION =================
 def is_leaf_by_color(image, threshold=0.18):
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    import cv2  # ✅ lazy import
 
-    # Green
+    hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+
     green_lower = np.array([35, 40, 40])
     green_upper = np.array([85, 255, 255])
 
-    # Yellow
     yellow_lower = np.array([20, 40, 40])
     yellow_upper = np.array([35, 255, 255])
 
-    # Brown
     brown_lower = np.array([10, 50, 20])
     brown_upper = np.array([20, 255, 200])
 
@@ -47,7 +44,7 @@ def is_leaf_by_color(image, threshold=0.18):
 def detect_object_yolo(image):
     results = yolo(image)[0]
 
-    if len(results.boxes) == 0:
+    if results.boxes is None or len(results.boxes) == 0:
         return "Unknown", None
 
     box = results.boxes[0]
@@ -58,6 +55,8 @@ def detect_object_yolo(image):
 
 # ================= CNN PREDICTION =================
 def cnn_predict(image):
+    import cv2  # ✅ lazy import
+
     img = cv2.resize(image, (224, 224))
     img = img / 255.0
     img = np.expand_dims(img, axis=0)
@@ -73,10 +72,7 @@ def cnn_predict(image):
 st.set_page_config("Plant Leaf Detection", "🌿")
 st.title("🌿 Plant Disease Prediction")
 
-mode = st.selectbox(
-    "Select Input Type",
-    ["Image", "Video", "Camera"]
-)
+mode = st.selectbox("Select Input Type", ["Image", "Video", "Camera"])
 
 # ================= IMAGE =================
 if mode == "Image":
@@ -88,26 +84,21 @@ if mode == "Image":
 
         if is_leaf_by_color(frame):
             plant, disease, conf = cnn_predict(frame)
-
             st.success("✅ Leaf Detected")
-            st.write(f"🌱 **Plant:** {plant}")
-            st.write(f"🦠 **Disease:** {disease}")
-            st.write(f"📊 **Confidence:** {conf*100:.2f}%")
-
+            st.write(f"🌱 Plant: {plant}")
+            st.write(f"🦠 Disease: {disease}")
+            st.write(f"📊 Confidence: {conf*100:.2f}%")
         else:
             label, box = detect_object_yolo(frame)
-            st.error(f"❌ Not a leaf. Detected object: **{label.upper()}**")
-
-            if box is not None:
-                x1, y1, x2, y2 = map(int, box)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            st.error(f"❌ Not a leaf. Detected: {label.upper()}")
 
         st.image(frame, width=700)
 
 # ================= VIDEO =================
 elif mode == "Video":
-    video_file = st.file_uploader("Upload Video", type=["mp4", "avi", "mov"])
+    import cv2  # ✅ only loads when needed
 
+    video_file = st.file_uploader("Upload Video", type=["mp4", "avi", "mov"])
     if video_file:
         temp = tempfile.NamedTemporaryFile(delete=False)
         temp.write(video_file.read())
@@ -120,31 +111,29 @@ elif mode == "Video":
             if not ret:
                 break
 
-            if is_leaf_by_color(frame):
-                plant, disease, conf = cnn_predict(frame)
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            if is_leaf_by_color(frame_rgb):
+                plant, disease, _ = cnn_predict(frame_rgb)
                 text = f"LEAF | {plant} | {disease}"
                 color = (0, 255, 0)
             else:
-                label, box = detect_object_yolo(frame)
+                label, box = detect_object_yolo(frame_rgb)
                 text = f"NOT LEAF: {label}"
-                color = (0, 0, 255)
+                color = (255, 0, 0)
 
-                if box is not None:
-                    x1, y1, x2, y2 = map(int, box)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(frame_rgb, text, (20, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
-            cv2.putText(
-                frame, text, (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2
-            )
-
-            stframe.image(frame, channels="BGR", width=700)
+            stframe.image(frame_rgb, width=700)
 
         cap.release()
 
 # ================= CAMERA =================
 elif mode == "Camera":
-    st.warning("Camera running. Stop by closing the app or terminal.")
+    import cv2  # ✅ local only
+
+    st.warning("⚠ Camera works only on local system, not Streamlit Cloud.")
 
     cap = cv2.VideoCapture(0)
     stframe = st.empty()
@@ -154,27 +143,20 @@ elif mode == "Camera":
         if not ret:
             break
 
-        if is_leaf_by_color(frame):
-            plant, disease, conf = cnn_predict(frame)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        if is_leaf_by_color(frame_rgb):
+            plant, disease, _ = cnn_predict(frame_rgb)
             text = f"LEAF | {plant} | {disease}"
             color = (0, 255, 0)
         else:
-            label, box = detect_object_yolo(frame)
+            label, _ = detect_object_yolo(frame_rgb)
             text = f"NOT LEAF: {label}"
-            color = (0, 0, 255)
+            color = (255, 0, 0)
 
-            if box is not None:
-                x1, y1, x2, y2 = map(int, box)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(frame_rgb, text, (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
-        cv2.putText(
-            frame, text, (20, 40),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2
-        )
-
-        stframe.image(frame, channels="BGR", width=700)
+        stframe.image(frame_rgb, width=700)
 
     cap.release()
-
-
-
