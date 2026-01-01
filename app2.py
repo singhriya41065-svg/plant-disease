@@ -10,7 +10,7 @@ from PIL import Image
 import tempfile
 
 # ================= LOAD MODELS =================
-cnn_model = tf.keras.models.load_model("best_model.h5")
+cnn_model = tf.keras.models.load_model("best_model.h5", compile=False)
 yolo = YOLO("yolov8n.pt")
 
 with open("class_names.txt") as f:
@@ -160,3 +160,4 @@ elif mode == "Camera":
         stframe.image(frame_rgb, width=700)
 
     cap.release()
+
