@@ -1,5 +1,7 @@
 import os
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
+os.environ["YOLO_VERBOSE"] = "False"
+
 
 import streamlit as st
 import cv2
@@ -173,5 +175,6 @@ elif mode == "Camera":
         stframe.image(frame, channels="BGR", width=700)
 
     cap.release()
+
 
 
